@@ -9,7 +9,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
@@ -22,15 +22,11 @@ services:
     build: ../backend
     restart: unless-stopped
     environment:
-      # 只注入 backend 需要的变量，不整份 env_file（避免密钥面扩散到不需要它的容器）
       GC_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       GC_ENV: ${GC_ENV}
       GC_JWT_SECRET: ${GC_JWT_SECRET}
       GC_CORS_ORIGINS: ${GC_CORS_ORIGINS}
-      # BYOK 密钥加密主密钥（Fernet 44 位 urlsafe）
       GC_ENCRYPTION_KEY: ${GC_ENCRYPTION_KEY}
-      # 只信任来自 Caddy（固定 IP）的转发头，uvicorn 才会把 X-Forwarded-For
-      # 解析成真实客户端 IP —— 否则登录限速会把全部用户算成同一个"代理 IP"
       FORWARDED_ALLOW_IPS: 172.28.137.2
     depends_on:
       db:
@@ -60,7 +56,7 @@ services:
       DOMAIN: ${DOMAIN}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
+      - caddy_certs:/data
       - caddy_config:/config
     depends_on:
       backend:
@@ -70,13 +66,14 @@ services:
         ipv4_address: 172.28.137.2
 
 volumes:
-  pgdata:
-  caddy_data:
+  postgres_data:
+    name: growthcrew_postgres_data
+  caddy_certs:
+    name: growthcrew_caddy_certs
   caddy_config:
+    name: growthcrew_caddy_config
 
 networks:
-  # 固定子网：给 Caddy 一个稳定 IP，供 backend 的 FORWARDED_ALLOW_IPS 精确信任。
-  # 若与服务器上其他 compose 项目网段冲突，改这里和 backend 的 FORWARDED_ALLOW_IPS 即可。
   gc_net:
     driver: bridge
     ipam:
