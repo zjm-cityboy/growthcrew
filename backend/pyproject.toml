@@ -1,0 +1,97 @@
+[project]
+name = "growthcrew-backend"
+version = "0.1.0"
+description = "GrowthCrew 后端 — 面向自学者的多智能体自我成长管理系统"
+requires-python = ">=3.12"
+license = { text = "AGPL-3.0-only" }
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "asyncpg>=0.30",
+    "aiosqlite>=0.20",
+    "alembic>=1.14",
+    "argon2-cffi>=23.1",
+    "pyjwt>=2.10",
+    "cryptography>=43.0",
+    "httpx>=0.28", # 推送适配器（Bark/PushPlus/企微）+ 测试客户端
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "pip-audit>=2.7",
+]
+# P1.2 起 Agent 相关依赖
+# 注：langgraph-checkpoint-postgresql（跨请求中断恢复）推迟到 P2 对话场景再引入，
+# 当前源无该包发行版；P1.2 的 HITL 审批走服务层持久化提案表（见 ADR-0003）
+agents = [
+    "langgraph>=1.0",
+    "fastmcp>=4.0",
+    "openai>=2.0",
+]
+# P2 定时任务（晨推/周三小结/周报）启用时安装
+jobs = [
+    "apscheduler>=3.10,<4",
+]
+
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+# ---------- 代码规范（ruff：lint + format 一体化） ----------
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["app", "tests"]
+
+[tool.ruff.lint]
+# 忽略项均有明确理由：
+# RUF001/002/003 — 中文项目注释/文档串使用全角标点，属正常现象
+# B008 — FastAPI 的 Depends() 必须写在参数默认值位置，是该框架的标准惯用法
+ignore = ["RUF001", "RUF002", "RUF003", "B008"]
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes
+    "I",     # import 排序
+    "N",     # 命名规范
+    "UP",    # 升级到现代语法
+    "B",     # 常见 bug 陷阱
+    "C4",    # 更干净的推导式
+    "SIM",   # 简化建议
+    "ASYNC", # 异步陷阱
+    "S",     # 安全（bandit）
+    "RUF",   # ruff 专属规则
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]          # 测试里允许 assert
+"alembic/*" = ["E501"]        # 迁移脚本允许长行
+
+# ---------- 类型检查（mypy 严格模式，从第一天开） ----------
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+files = ["app"]
+
+[[tool.mypy.overrides]]
+module = "apscheduler.*" # APScheduler 3.x 未带完整类型桩
+ignore_missing_imports = true
+
+# ---------- 测试 ----------
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+addopts = "-q"

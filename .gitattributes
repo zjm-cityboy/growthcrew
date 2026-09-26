@@ -1,0 +1,12 @@
+# 统一行尾：仓库内一律 LF（服务器 Linux / 本地 Windows 均正常）
+* text=auto eol=lf
+
+# Windows 专属脚本保留 CRLF
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# 二进制文件不做行尾转换
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff2 binary

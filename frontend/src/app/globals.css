@@ -1,0 +1,80 @@
+@import "tailwindcss";
+
+/*
+ * GrowthCrew 设计令牌（.superdesign/design-system.md v1.0）
+ * 风格来源 Softly — Digital Wellness App（借鉴模式），强调色换为成长绿。
+ */
+:root {
+  --gc-bg: #fdfcf8; /* 暖纸白 */
+  --gc-card: #ffffff;
+  --gc-text: #292524; /* 软黑 */
+  --gc-muted: #78716c; /* 石灰 */
+  --gc-accent: #5c8a6e; /* 成长绿 */
+  --gc-accent-soft: #e8efe8; /* sage 浅底 */
+  --gc-peach: #ffb7b2; /* 蜜桃：仅作底色/装饰，不作文字色（对比度不足） */
+  --gc-peach-soft: #fdecea;
+  --gc-lavender: #efedf4; /* 薰衣草：AI/晚间 */
+  --gc-divider: #e7e5e4;
+  --gc-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05);
+  --gc-shadow-float: 0 4px 20px -2px rgba(0, 0, 0, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --gc-bg: #1c1917;
+    --gc-card: #292524;
+    --gc-text: #e7e5e4;
+    --gc-muted: #a8a29e;
+    --gc-accent: #7fb08f;
+    --gc-accent-soft: #2e3833;
+    --gc-peach: #d9a19d;
+    --gc-peach-soft: #453534;
+    --gc-lavender: #373342;
+    --gc-divider: #44403c;
+    --gc-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.3);
+    --gc-shadow-float: 0 4px 20px -2px rgba(0, 0, 0, 0.4);
+  }
+}
+
+@theme inline {
+  --color-gc-bg: var(--gc-bg);
+  --color-gc-card: var(--gc-card);
+  --color-gc-text: var(--gc-text);
+  --color-gc-muted: var(--gc-muted);
+  --color-gc-accent: var(--gc-accent);
+  --color-gc-accent-soft: var(--gc-accent-soft);
+  --color-gc-peach: var(--gc-peach);
+  --color-gc-peach-soft: var(--gc-peach-soft);
+  --color-gc-lavender: var(--gc-lavender);
+  --color-gc-divider: var(--gc-divider);
+  --font-sans:
+    "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+}
+
+body {
+  background: var(--gc-bg);
+  color: var(--gc-text);
+  font-family: var(--font-sans);
+}
+
+/* 卡片统一阴影（设计系统唯一的 elevation 语言） */
+.gc-card {
+  background: var(--gc-card);
+  border-radius: 1.5rem;
+  box-shadow: var(--gc-shadow);
+}
+
+/* 底部抽屉滑入（低流速动效） */
+@keyframes gc-slide-up {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+.gc-slide-up {
+  animation: gc-slide-up 0.3s ease-out;
+}

@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "targets": {
+    "/chat": {
+      "targetKind": "flow-page",
+      "sourceTarget": "/",
+      "sourceDraftId": "e58601dd-f23d-40d5-b1db-1d8be1a7f3c5",
+      "projectId": "828c5922-080e-46d9-a189-93b3701f24c9",
+      "activeDraftId": "6e5c31d3-443d-497c-8f20-0e6a00025973",
+      "designSystemPath": ".superdesign/design-system.md",
+      "contextFiles": [
+        ".superdesign/design-system.md",
+        "frontend/src/app/globals.css"
+      ],
+      "fingerprints": {
+        ".superdesign/design-system.md": "360aa4fcfd4dbbdb83148c9c60c806972614d938b29bb3164a74faa36cb9cc91",
+        "frontend/src/app/globals.css": "769edf77bd0d101a2d26e6c5656defba8cd885ff37d92279fa293a2756fe5651"
+      },
+      "components": [],
+      "drafts": {
+        "6e5c31d3-443d-497c-8f20-0e6a00025973": {
+          "title": "对话 Tab — 与总编对话",
+          "visualDirection": "薰衣草 AI 气泡 + 计划导入引导卡 + 审批卡 + 药丸输入区",
+          "device": "mobile"
+        }
+      },
+      "updatedAt": "2026-09-23T12:00:00+08:00"
+    },
+    "/archive": {
+      "targetKind": "flow-page",
+      "sourceTarget": "/",
+      "sourceDraftId": "e58601dd-f23d-40d5-b1db-1d8be1a7f3c5",
+      "projectId": "828c5922-080e-46d9-a189-93b3701f24c9",
+      "activeDraftId": "a6f40f67-5520-4f9c-a27e-1d8f247c8781",
+      "designSystemPath": ".superdesign/design-system.md",
+      "contextFiles": [
+        ".superdesign/design-system.md",
+        "frontend/src/app/globals.css"
+      ],
+      "fingerprints": {
+        ".superdesign/design-system.md": "360aa4fcfd4dbbdb83148c9c60c806972614d938b29bb3164a74faa36cb9cc91",
+        "frontend/src/app/globals.css": "769edf77bd0d101a2d26e6c5656defba8cd885ff37d92279fa293a2756fe5651"
+      },
+      "components": [],
+      "drafts": {
+        "a6f40f67-5520-4f9c-a27e-1d8f247c8781": {
+          "title": "档案 Tab — 成长档案",
+          "visualDirection": "streak 徽章 + 8 周热力图 + 完成率竖条 + 卡因横条 + 周报摘要",
+          "device": "mobile"
+        }
+      },
+      "updatedAt": "2026-09-23T12:00:00+08:00"
+    },
+    "/": {
+      "targetKind": "new-target",
+      "projectId": "828c5922-080e-46d9-a189-93b3701f24c9",
+      "activeDraftId": "e58601dd-f23d-40d5-b1db-1d8be1a7f3c5",
+      "designSystemPath": ".superdesign/design-system.md",
+      "contextFiles": [
+        ".superdesign/design-system.md",
+        "frontend/src/app/globals.css"
+      ],
+      "fingerprints": {
+        ".superdesign/design-system.md": "360aa4fcfd4dbbdb83148c9c60c806972614d938b29bb3164a74faa36cb9cc91",
+        "frontend/src/app/globals.css": "769edf77bd0d101a2d26e6c5656defba8cd885ff37d92279fa293a2756fe5651"
+      },
+      "components": [],
+      "drafts": {
+        "126f76d2-fba3-4e50-b2a6-55b4496aa843": {
+          "title": "今日 Tab — 卡片基准版",
+          "visualDirection": "基准：白色大卡片 + 成长绿勾选 + 浮动药丸 Tab",
+          "parentDraftId": null,
+          "device": "mobile"
+        },
+        "d263a66c-1e94-48e0-8642-9ea0b0f20209": {
+          "title": "今日 Tab — 变体A 极简清单",
+          "visualDirection": "细窄清单行替代大卡、更纸面留白、少即是多",
+          "parentDraftId": "126f76d2-fba3-4e50-b2a6-55b4496aa843",
+          "device": "mobile"
+        },
+        "e58601dd-f23d-40d5-b1db-1d8be1a7f3c5": {
+          "title": "今日 Tab — 变体B 温和时间轴",
+          "visualDirection": "按早/上午/晚分段时间轴，手账感，薰衣草晚间复盘卡",
+          "parentDraftId": "126f76d2-fba3-4e50-b2a6-55b4496aa843",
+          "device": "mobile",
+          "selected": true
+        }
+      },
+      "updatedAt": "2026-09-23T00:00:00+08:00"
+    }
+  }
+}

@@ -1,0 +1,12 @@
+# 反向代理 + 自动 HTTPS + 安全响应头
+{$DOMAIN} {
+	encode gzip zstd
+	reverse_proxy backend:8000
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+}

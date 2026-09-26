@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    name: 后端门禁（lint / format / type / test×2 / audit）
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: gc
+          POSTGRES_PASSWORD: gc
+          POSTGRES_DB: gc_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U gc"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,agents,jobs]"
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Format 检查
+        run: ruff format --check .
+
+      - name: 类型检查（mypy 严格模式）
+        run: mypy app
+
+      - name: 测试（SQLite，覆盖率门禁 80%）
+        run: pytest --cov=app --cov-report=term-missing --cov-fail-under=80
+
+      - name: 测试（PostgreSQL + 迁移冒烟）
+        env:
+          GC_TEST_DB_URL: postgresql+asyncpg://gc:gc@localhost:5432/gc_test
+        run: pytest
+
+      - name: 依赖安全审计
+        run: pip-audit --skip-editable
+        continue-on-error: true # TODO: 试运行一个月后改为强制门禁
+
+  frontend:
+    name: 前端门禁（lint / build）
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: 构建
+        run: npm run build

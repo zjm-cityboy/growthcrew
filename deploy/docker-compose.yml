@@ -1,0 +1,84 @@
+# GrowthCrew 生产编排：db + backend + caddy（自动 HTTPS）
+# 使用前：cp .env.example .env 并填写真实值（.env 已被 gitignore）
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - gc_net
+
+  backend:
+    build: ../backend
+    restart: unless-stopped
+    environment:
+      # 只注入 backend 需要的变量，不整份 env_file（避免密钥面扩散到不需要它的容器）
+      GC_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      GC_ENV: ${GC_ENV}
+      GC_JWT_SECRET: ${GC_JWT_SECRET}
+      GC_CORS_ORIGINS: ${GC_CORS_ORIGINS}
+      # BYOK 密钥加密主密钥（Fernet 44 位 urlsafe）
+      GC_ENCRYPTION_KEY: ${GC_ENCRYPTION_KEY}
+      # 只信任来自 Caddy（固定 IP）的转发头，uvicorn 才会把 X-Forwarded-For
+      # 解析成真实客户端 IP —— 否则登录限速会把全部用户算成同一个"代理 IP"
+      FORWARDED_ALLOW_IPS: 172.28.137.2
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/live', timeout=3)",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - gc_net
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      gc_net:
+        ipv4_address: 172.28.137.2
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
+
+networks:
+  # 固定子网：给 Caddy 一个稳定 IP，供 backend 的 FORWARDED_ALLOW_IPS 精确信任。
+  # 若与服务器上其他 compose 项目网段冲突，改这里和 backend 的 FORWARDED_ALLOW_IPS 即可。
+  gc_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.137.0/24
