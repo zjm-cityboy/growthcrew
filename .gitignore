@@ -1,3 +1,7 @@
+# ---- 内部文档（不上传 GitHub，仅本地查看） ----
+docs/
+.superdesign/
+
 # ---- 密钥与环境（红线：绝不提交） ----
 .env
 .env.*
@@ -30,5 +34,3 @@ frontend/node_modules/
 *.swp
 .DS_Store
 Thumbs.db
-
-.superdesign/tmp/

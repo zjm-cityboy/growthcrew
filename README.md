@@ -82,7 +82,7 @@ npm run dev
 # 打开 http://localhost:3000
 ```
 
-详细部署见 [STARTUP.md](STARTUP.md) · 使用教程见 [USER_GUIDE.md](USER_GUIDE.md)
+详细部署见 [deploy/runbook.md](deploy/runbook.md)
 
 ## 项目阶段
 
