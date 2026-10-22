@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.llm import LLMBackend, LLMCallError, NoLLMConfiguredError, build_backend_from_byok
-from app.agents.planner import PlannerAgent, PlannerError
+from app.agents.planner import PlannerAgent, PlannerError, ProgressReporter
 from app.core.crypto import CryptoError
 from app.domain.enums import NotificationType, PlanStatus, ProposalStatus
 from app.models.plan import PlanProposal
@@ -42,8 +42,12 @@ class PlanImportService:
         user_id: int,
         payload: ImportPlanIn,
         backend: LLMBackend | None = None,
+        on_event: ProgressReporter | None = None,
     ) -> ImportOut:
-        """贴入参考计划 → 教练 Agent 对齐 → 草稿计划 + 待审批提案。"""
+        """贴入参考计划 → 教练 Agent 对齐 → 草稿计划 + 待审批提案。
+
+        on_event：可选过程事件接收器（SSE 流式端点用它实时推送教练进度）。
+        """
         goal = await self._goals.get_for_user(payload.goal_id, user_id)
         if goal is None:
             raise NotFoundError("目标不存在")
@@ -55,7 +59,7 @@ class PlanImportService:
                 raise LLMSettingsError("请先在设置中配置模型（BYOK 三件套）") from exc
             except CryptoError as exc:
                 raise LLMSettingsError("加密密钥已变更，请重新保存模型配置") from exc
-        agent = PlannerAgent(self._session, backend, goal)
+        agent = PlannerAgent(self._session, backend, goal, on_event=on_event)
         try:
             outcome = await agent.run(payload.raw_text, payload.weekly_hours)
         except (PlannerError, LLMCallError) as exc:
@@ -63,6 +67,9 @@ class PlanImportService:
             raise PlannerFailedError(str(exc)) from exc
         if payload.weekly_hours is not None and goal.weekly_hours is None:
             goal.weekly_hours = payload.weekly_hours  # 首次访谈结果落到目标上
+        if goal.deadline is None and outcome.parsed_deadline is not None:
+            # 用户没手选截止日期 → 回填从文本推导的（"3个月拿下"→ 今天+3个月）
+            goal.deadline = outcome.parsed_deadline
         await self._session.commit()
         if outcome.proposal_id is None:
             return ImportOut(status="questions", questions=outcome.questions)
@@ -111,7 +118,9 @@ class PlanImportService:
         await self._session.commit()
         return self._to_out(proposal)
 
-    async def reject(self, user_id: int, proposal_id: int) -> ProposalOut:
+    async def reject(
+        self, user_id: int, proposal_id: int, reason: str | None = None
+    ) -> ProposalOut:
         proposal = await self._proposals.get_for_user(proposal_id, user_id)
         if proposal is None:
             raise NotFoundError("提案不存在")
@@ -121,8 +130,41 @@ class PlanImportService:
             raise StateConflictError("该提案已被处理")
         proposal.status = ProposalStatus.REJECTED
         proposal.decided_at = datetime.now(UTC)
+        # 拒绝原因落库：教练下次排程读取并对应调整（反馈闭环的入口）
+        proposal.rejection_reason = (reason or "").strip() or None
         await self._session.commit()
         return self._to_out(proposal)
+
+    # ---------- 管理端代操作：按提案 id 反查归属用户后走同一条审批路径 ----------
+
+    async def _owner_of(self, proposal_id: int) -> int | None:
+        from sqlalchemy import select
+
+        from app.models.goal import Goal as GoalModel
+        from app.models.plan import PlanProposal as PlanProposalModel
+        from app.models.plan import WeeklyPlan as WeeklyPlanModel
+
+        row = (
+            await self._session.execute(
+                select(GoalModel.user_id)
+                .join(WeeklyPlanModel, WeeklyPlanModel.goal_id == GoalModel.id)
+                .join(PlanProposalModel, PlanProposalModel.weekly_plan_id == WeeklyPlanModel.id)
+                .where(PlanProposalModel.id == proposal_id)
+            )
+        ).scalar_one_or_none()
+        return row
+
+    async def approve_by_admin(self, proposal_id: int) -> ProposalOut:
+        owner = await self._owner_of(proposal_id)
+        if owner is None:
+            raise NotFoundError("提案不存在")
+        return await self.approve(owner, proposal_id)
+
+    async def reject_by_admin(self, proposal_id: int, reason: str) -> ProposalOut:
+        owner = await self._owner_of(proposal_id)
+        if owner is None:
+            raise NotFoundError("提案不存在")
+        return await self.reject(owner, proposal_id, reason)
 
     @staticmethod
     def _to_out(proposal: PlanProposal) -> ProposalOut:

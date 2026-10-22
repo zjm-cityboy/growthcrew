@@ -37,14 +37,15 @@ def _weekly_script() -> list[AssistantResult]:
 
 
 async def _seed_week(engine: AsyncEngine, user_id: int) -> None:
-    from datetime import timedelta
 
     await _seed_plan_tasks(
         engine,
         user_id,
         [
-            (_today() - timedelta(days=1), "A", TaskStatus.DONE),
-            (_today() - timedelta(days=1), "B", TaskStatus.DONE),
+            # 固定造在"今天"：复盘师按"本周一至今"取数，造在昨天会在周一整天
+            # （昨天=上周日）滚出窗口，测试出现日期脆弱性
+            (_today(), "A", TaskStatus.DONE),
+            (_today(), "B", TaskStatus.DONE),
             (_today(), "C", TaskStatus.TODO),
         ],
     )

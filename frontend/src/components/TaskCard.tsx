@@ -4,7 +4,7 @@ import { SKIP_REASONS, api, type SkipReason, type TaskOut } from "@/lib/api";
 import { useState } from "react";
 import MiniSheet from "./MiniSheet";
 
-/** 任务卡：点圆圈打卡（≤2 步），跳过时一键选卡因。 */
+/** 任务卡：点圆圈打卡（≤2 步），跳过时一键选原因。 */
 export default function TaskCard({
   task,
   onChanged,
@@ -56,6 +56,13 @@ export default function TaskCard({
 
   return (
     <>
+      {task.coach_hint && (
+        // 教练即时干预：同因跳过反复出现时给出提示（承诺的调整在下次生成时真实发生）
+        <div className="flex items-start gap-2 rounded-2xl bg-gc-lavender/60 px-4 py-2.5 text-xs leading-5 text-gc-text">
+          <span className="mt-0.5 shrink-0 rounded-full bg-gc-lavender px-1.5 py-0.5 text-[10px]">教练</span>
+          <span>{task.coach_hint}</span>
+        </div>
+      )}
       <div className="gc-card flex items-center gap-3 px-4 py-3.5">
         <button
           aria-label={done ? "已完成" : "标记完成"}
@@ -94,7 +101,7 @@ export default function TaskCard({
         )}
       </div>
 
-      <MiniSheet open={skipOpen} title="跳过的原因是？（一键卡因）" onClose={() => setSkipOpen(false)}>
+      <MiniSheet open={skipOpen} title="跳过的原因是？（一键选择）" onClose={() => setSkipOpen(false)}>
         <div className="grid grid-cols-2 gap-3">
           {SKIP_REASONS.map((reason) => (
             <button

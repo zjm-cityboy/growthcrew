@@ -91,4 +91,7 @@ class PlanProposal(TimestampMixin, Base):
     )
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # 用户拒绝时选的原因（教练下轮排程的输入：拒绝不该是死胡同）
+    rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     weekly_plan: Mapped[WeeklyPlan] = relationship(back_populates="proposals")

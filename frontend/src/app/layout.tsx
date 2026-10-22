@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import BottomTabs from "@/components/BottomTabs";
+import AppShell from "@/components/AppShell";
 import ClientInit from "@/components/ClientInit";
 import "./globals.css";
 
@@ -25,8 +25,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="zh-CN" className="h-full antialiased">
       <body className="min-h-full">
         <ClientInit />
-        <main className="mx-auto min-h-dvh max-w-[480px] px-4 pb-28 pt-6">{children}</main>
-        <BottomTabs />
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );

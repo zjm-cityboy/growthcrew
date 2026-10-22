@@ -66,7 +66,16 @@ class TaskService:
         if updated is None:
             raise StateConflictError("该任务状态已被其他操作修改")
         await self._session.commit()
-        return TaskOut.model_validate(updated)
+        # 即时干预：本周（周一至今）同因跳过≥3 次 → 给出教练提示。
+        # 承诺的调整是真实闭环：下次生成计划时教练读执行历史会据此自适应。
+        out = TaskOut.model_validate(updated)
+        same_reason = await self._tasks.count_skipped_this_week(user_id, reason)
+        if same_reason >= 3:
+            out.coach_hint = (
+                f"这周你已 {same_reason} 次因「{reason.value}」跳过——"
+                "下次生成计划时我会据此下调/调整。连续跳过不是失败，是计划还没贴合你。"
+            )
+        return out
 
     async def _require_task(self, task_id: int, user_id: int) -> Task:
         task = await self._tasks.get_for_user(task_id, user_id)

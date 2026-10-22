@@ -39,3 +39,16 @@ async def get_goal(
         return await GoalService(session).get(current_user.id, goal_id)
     except NotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="目标不存在") from exc
+
+
+@router.post("/{goal_id}/archive", response_model=GoalOut)
+async def archive_goal(
+    goal_id: int,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> GoalOut:
+    """归档目标：退出各列表并停排生效计划（软删除，历史保留）。"""
+    try:
+        return await GoalService(session).archive(current_user.id, goal_id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="目标不存在") from exc

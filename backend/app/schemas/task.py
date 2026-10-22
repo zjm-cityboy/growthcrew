@@ -20,6 +20,8 @@ class TaskOut(BaseModel):
     skip_reason: SkipReason | None
     actual_minutes: int | None
     completed_at: datetime | None
+    # 教练提示：本周同因跳过≥3 次时出现（承诺的调整在下次生成计划时真实发生）
+    coach_hint: str = ""
 
 
 class TaskCompleteIn(BaseModel):

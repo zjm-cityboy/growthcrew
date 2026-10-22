@@ -13,8 +13,9 @@ from openai import AsyncOpenAI, OpenAIError
 from app.services.llm_settings import ResolvedLLMConfig
 
 # 单次调用超时与重试：Agent 链路在单个 HTTP 请求内串行多次调用，
-# 默认 600s 超时会把请求与 DB 连一起拖死
-_REQUEST_TIMEOUT_SECONDS = 30.0
+# 默认 600s 超时会把请求与 DB 连一起拖死；60s 实测覆盖 30B 级模型
+# 带长计划上下文的首 token 延迟（Qwen3.5-35B 正常 <20s，偶发排队留余量）
+_REQUEST_TIMEOUT_SECONDS = 60.0
 _MAX_RETRIES = 1
 
 

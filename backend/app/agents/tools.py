@@ -5,23 +5,27 @@ submit_proposal 是唯一的计划写入口（草稿态 + 提案审计），审�
 """
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 from fastmcp import FastMCP
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.scheduler import SubjectAllocation, next_monday
 from app.agents.scheduler import schedule_week as run_scheduler
 from app.core.time import today_cn
-from app.domain.enums import PlanStatus
+from app.domain.enums import PlanStatus, ProposalStatus
 from app.models.goal import Goal
+from app.models.plan import PlanProposal, WeeklyPlan
+from app.models.report import WeeklyReport
 from app.repositories.plan import (
     PlanProposalRepository,
     TaskRepository,
     WeeklyPlanRepository,
 )
+from app.services.stats import StatsService
 
 
 @dataclass
@@ -43,7 +47,22 @@ def build_planner_tools(ctx: PlannerContext) -> FastMCP:
 
     @mcp.tool
     async def get_goal_context() -> dict[str, Any]:
-        """读取当前目标的关键信息：标题、截止日期、每周可投入小时、里程碑列表。"""
+        """读取当前目标的关键信息：标题、截止日期、每周可投入小时、里程碑列表，
+        以及上次提案被拒的原因（若有）——本轮排程要针对它做对应调整。"""
+        # 上次被拒提案的原因（反馈闭环：拒绝 → 原因 → 本轮针对性调整）
+        last_rejected = (
+            await ctx.session.execute(
+                select(PlanProposal.rejection_reason)
+                .join(WeeklyPlan, PlanProposal.weekly_plan_id == WeeklyPlan.id)
+                .where(
+                    WeeklyPlan.goal_id == ctx.goal.id,
+                    PlanProposal.status == ProposalStatus.REJECTED,
+                    PlanProposal.rejection_reason.is_not(None),
+                )
+                .order_by(PlanProposal.id.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
         return {
             "title": ctx.goal.title,
             "deadline": ctx.goal.deadline.isoformat() if ctx.goal.deadline else None,
@@ -52,15 +71,74 @@ def build_planner_tools(ctx: PlannerContext) -> FastMCP:
                 {"title": m.title, "due_date": m.due_date.isoformat() if m.due_date else None}
                 for m in ctx.goal.milestones
             ],
+            "last_rejection_reason": last_rejected,
+        }
+
+    @mcp.tool
+    async def get_execution_history(window_days: int = 14) -> dict[str, Any]:
+        """读取近期执行历史：完成率、跳过原因分布、各时段（北京小时）完成/跳过规律，
+        以及复盘师最近一期周报的洞察。
+
+        排程前必读——让计划适应用户的真实行为（如常在晚间因疲劳跳过 →
+        下调晚间任务量或调整科目），而不是每周从零重排。
+        复盘师洞察（另一位 Agent 的分析结论）与统计数据互相印证，一并参考。
+        """
+        stats = StatsService(ctx.session)
+        skip = await stats.skip_reasons(ctx.user_id, window_days)
+        hours = await stats.hours(ctx.user_id, window_days)
+        # 上一完整自然周（周一~周日）：本周至今只有 1-2 天数据时完成率
+        # 严重噪声（做 1 件 100%/漏 1 件 0%），教练据此会错误下调计划
+        this_monday = today_cn() - timedelta(days=today_cn().weekday())
+        prev_monday = this_monday - timedelta(days=7)
+        heatmap = await stats.heatmap(ctx.user_id, 2)
+        prev_week = [
+            d for d in heatmap.days if prev_monday <= d.date <= prev_monday + timedelta(days=6)
+        ]
+        done = sum(d.done for d in prev_week)
+        total = sum(d.total for d in prev_week)
+        # 复盘师 → 教练的消息通道：最近一期周报的洞察随执行数据一并下发
+        last_report = (
+            await ctx.session.execute(
+                select(WeeklyReport.title, WeeklyReport.content)
+                .where(WeeklyReport.user_id == ctx.user_id)
+                .order_by(WeeklyReport.week_start.desc())
+                .limit(1)
+            )
+        ).first()
+        insight = None
+        if last_report is not None:
+            insight = f"{last_report.title}——{last_report.content[:300]}"
+
+        # 时段规律提炼：完成最集中与跳过最集中的前 3 个小时（计数为 0 的剔除）
+        def top_hours(hist: list[int]) -> list[int]:
+            ranked = sorted(range(24), key=lambda h: -hist[h])[:3]
+            return [h for h in ranked if hist[h] > 0]
+
+        return {
+            "window_days": window_days,
+            "last_week": {
+                "done": done,
+                "total": total,
+                "completion_rate": round(done / total, 2) if total else None,
+            },
+            "skip_reasons": [{"reason": s.reason, "count": s.count} for s in skip.items],
+            "best_hours": top_hours(hours.completion_hours),
+            "worst_hours": top_hours(hours.skip_hours),
+            "reviewer_insight": insight,  # 复盘师（另一 Agent）对上周的结论，无周报时为 None
+            "note": "best/worst_hours 为北京小时；worst 时段的任务历史上大多被跳过",
         }
 
     @mcp.tool
     async def schedule_week(subjects: list[dict[str, Any]], weekly_hours: float) -> dict[str, Any]:
-        """运行确定性排程算法。subjects 形如 [{"label": "数学", "weekly_hours": 10}]；
+        """运行确定性排程算法。subjects 形如
+        [{"label": "下肢力量", "weekly_hours": 2.5, "items": ["深蹲 4×8", "硬拉 3×5"]}]
+        （items 可选：该科目的具体动作/学习单元，排程按天轮换写进任务标题）；
         weekly_hours 为该用户每周总预算小时。返回任务清单与超载标记。"""
         allocations = [
             SubjectAllocation(
-                label=str(s.get("label", "")), weekly_hours=float(s.get("weekly_hours", 0))
+                label=str(s.get("label", "")),
+                weekly_hours=float(s.get("weekly_hours", 0)),
+                items=tuple(str(i) for i in s.get("items") or [] if str(i).strip()),
             )
             for s in subjects
             if s.get("label")

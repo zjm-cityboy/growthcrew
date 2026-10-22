@@ -1,11 +1,11 @@
 "use client";
 
-import { api } from "@/lib/api";
+import { ApiError, api } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 const LLM_PRESETS = [
-  { value: "siliconflow", label: "硅基流动", url: "https://api.siliconflow.cn/v1", model: "Qwen/Qwen3.5-35B", signup: "https://siliconflow.cn" },
+  { value: "siliconflow", label: "硅基流动", url: "https://api.siliconflow.cn/v1", model: "Qwen/Qwen3.5-35B-A3B", signup: "https://siliconflow.cn" },
   { value: "deepseek", label: "DeepSeek", url: "https://api.deepseek.com/v1", model: "deepseek-chat", signup: "https://platform.deepseek.com" },
   { value: "custom", label: "其他 / 自定义", url: "", model: "", signup: "" },
 ] as const;
@@ -16,17 +16,20 @@ const PUSH_CHANNELS = [
   { value: "wecom_webhook", label: "企微群机器人", hint: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..." },
 ] as const;
 
-/** 设置页：BYOK 三件套 + 推送通道 + 退出。 */
+/** 设置页：模型配置 + 推送通道 + 演示时钟 + 退出。 */
 export default function SettingsPage() {
   const router = useRouter();
 
-  // BYOK
+  // 模型配置（用户自带服务商密钥，加密落库）
   const [baseUrl, setBaseUrl] = useState("https://api.siliconflow.cn/v1");
   const [apiKey, setApiKey] = useState("");
-  const [modelName, setModelName] = useState("Qwen/Qwen3.5-35B");
+  const [modelName, setModelName] = useState("Qwen/Qwen3.5-35B-A3B");
   const [masked, setMasked] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [activePreset, setActivePreset] = useState<string>("siliconflow");
+  // 已配置态：显示 ✓ 摘要 +「修改」入口（用户能一眼确认配好了没）
+  const [llmReady, setLlmReady] = useState(false);
+  const [editLlm, setEditLlm] = useState(false);
 
   // 推送
   const [pushChannel, setPushChannel] = useState<string>("bark");
@@ -34,10 +37,31 @@ export default function SettingsPage() {
   const [pushEnabled, setPushEnabled] = useState(true);
   const [pushTestResult, setPushTestResult] = useState("");
   const [sending, setSending] = useState(false);
+  const [editPush, setEditPush] = useState(false); // 已配置时收起表单，点「修改」展开
 
   const [error, setError] = useState("");
 
+  // 演示时钟（GC_DEMO_MODE 时后端返回状态，否则 404 → null 不显示该区块）
+  const [clock, setClock] = useState<{ today: string; override: string | null } | null>(null);
+  const [jumping, setJumping] = useState(false);
+
+  async function jump(days: number) {
+    setJumping(true);
+    try {
+      if (days === 0) {
+        setClock(await api.advanceDemoClock({ reset: true }));
+      } else {
+        setClock(await api.advanceDemoClock({ advance_days: days }));
+      }
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : "时间快进失败");
+    } finally {
+      setJumping(false);
+    }
+  }
+
   useEffect(() => {
+    api.getDemoClock().then(setClock).catch(() => null); // 404=未开演示模式，静默隐藏
     api
       .getLLMSettings()
       .then((settings) => {
@@ -45,6 +69,7 @@ export default function SettingsPage() {
           setBaseUrl(settings.base_url);
           setModelName(settings.model_name);
           setMasked(settings.api_key_masked);
+          setLlmReady(true); // 已配置 → 显示 ✓ 摘要态
         }
       })
       .catch(() => {});
@@ -75,10 +100,26 @@ export default function SettingsPage() {
       });
       setMasked(out.api_key_masked);
       setApiKey("");
+      setLlmReady(true);
+      setEditLlm(false); // 保存成功回到 ✓ 已配置态
       setSaved(true);
       window.setTimeout(() => setSaved(false), 2500);
     } catch (exc) {
       setError(exc instanceof Error ? exc.message : "保存失败");
+    }
+  }
+
+  /** 已配置态的"重新验证"：不重贴密钥，用库里配置按教练同款形态真调一次。 */
+  async function verifyOnly() {
+    setLlmTesting(true);
+    setLlmTestResult("验证中…");
+    try {
+      await api.verifyLLMSettings();
+      setLlmTestResult("验证通过 ✅ 模型可正常使用");
+    } catch (exc) {
+      setLlmTestResult(exc instanceof Error ? `验证未通过：${exc.message}` : "验证失败");
+    } finally {
+      setLlmTesting(false);
     }
   }
 
@@ -87,39 +128,26 @@ export default function SettingsPage() {
     setLlmTestResult("保存并验证中…");
     setError("");
     try {
-      await api.saveLLMSettings({
+      const out = await api.saveLLMSettings({
         base_url: baseUrl.trim(),
         api_key: apiKey.trim(),
         model_name: modelName.trim(),
       });
-      // 用保存的配置发一次最小验证请求
-      const testResp = await fetch(
-        `${baseUrl.trim()}/chat/completions`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${apiKey.trim()}`,
-          },
-          body: JSON.stringify({
-            model: modelName.trim(),
-            messages: [{ role: "user", content: "hi" }],
-            max_tokens: 1,
-          }),
-        },
-      );
-      if (testResp.ok) {
-        setLlmTestResult("已保存并验证通过 ✅");
-        setMasked(apiKey.trim().slice(0, 3) + "***" + apiKey.trim().slice(-4));
-        setApiKey("");
-      } else {
-        const body = await testResp.json().catch(() => ({}));
-        const msg = body?.error?.message ?? `验证失败（${testResp.status}）`;
-        setLlmTestResult(`已保存，但验证未通过：${msg}`);
-      }
+      setMasked(out.api_key_masked);
+      // 后端按教练链路同款形态（带 tools）真实调一次——
+      // 通过 = 密钥有效 + 模型存在 + 支持函数调用，与实际使用口径一致
+      await api.verifyLLMSettings();
+      setLlmTestResult("已保存并验证通过 ✅");
+      setApiKey("");
+      setLlmReady(true);
+      setEditLlm(false);
     } catch (exc) {
       setLlmTestResult(
-        exc instanceof Error ? `网络错误：${exc.message}` : "验证失败，请检查网络",
+        exc instanceof ApiError && exc.status === 502
+          ? `已保存，但验证未通过：${exc.message}`
+          : exc instanceof Error
+            ? `验证失败：${exc.message}`
+            : "验证失败，请稍后重试",
       );
     } finally {
       setLlmTesting(false);
@@ -137,6 +165,7 @@ export default function SettingsPage() {
         enabled: pushEnabled,
       });
       setPushTestResult("已保存 ✅");
+      setEditPush(false); // 保存成功回到 ✓ 已配置态
     } catch (exc) {
       setError(exc instanceof Error ? exc.message : "保存失败");
     }
@@ -155,6 +184,7 @@ export default function SettingsPage() {
       setPushTestResult(
         result.delivered ? "已保存并送达 ✅" : `已保存，但测试失败：${result.message}`,
       );
+      setEditPush(false);
     } catch (exc) {
       setPushTestResult(exc instanceof Error ? exc.message : "操作失败");
     } finally {
@@ -175,11 +205,88 @@ export default function SettingsPage() {
         <h1 className="text-[26px] font-medium tracking-tight">设置</h1>
       </header>
 
-    {/* BYOK */}
+      {/* 演示时间快进：仅后端 GC_DEMO_MODE=true 时出现（探测 404 即隐藏），置顶方便演示时一眼找到 */}
+      {clock && (
+        <section>
+          <h2 className="mb-1 px-1 text-sm font-medium text-gc-muted">⏩ 演示时间快进</h2>
+          <p className="mb-2 px-1 text-xs text-gc-muted">
+            面试演示用：快进后今日任务/连续打卡/统计整体穿越；重启后端即恢复真实时间
+          </p>
+          <div className="gc-card flex flex-col gap-3 px-5 py-4">
+            <p className="text-sm">
+              系统的「今天」：
+              <span className="font-medium">{clock.today}</span>
+              {clock.override ? "（已穿越）" : "（真实时间）"}
+            </p>
+            <div className="flex gap-2">
+              {[
+                { label: "+1 天", days: 1 },
+                { label: "+7 天", days: 7 },
+              ].map((btn) => (
+                <button
+                  key={btn.label}
+                  onClick={() => jump(btn.days)}
+                  disabled={jumping}
+                  className="flex-1 rounded-full bg-gc-accent-soft px-3 py-2 text-xs text-gc-text active:opacity-70 disabled:opacity-50"
+                >
+                  {btn.label}
+                </button>
+              ))}
+              {clock.override && (
+                <button
+                  onClick={() => jump(0)}
+                  disabled={jumping}
+                  className="flex-1 rounded-full bg-gc-bg px-3 py-2 text-xs text-gc-muted active:opacity-70 disabled:opacity-50"
+                >
+                  回到真实
+                </button>
+              )}
+            </div>
+            <p className="text-xs text-gc-muted">快进后去「今日」页看任务滚动与连续天数累积</p>
+          </div>
+        </section>
+      )}
+
+    {/* 模型配置（AI 功能的前提）：已配置显示 ✓ 摘要，未配置或编辑中显示表单 */}
     <section>
-      <h2 className="mb-1 px-1 text-sm font-medium text-gc-muted">模型（BYOK）</h2>
+      <h2 className="mb-1 px-1 text-sm font-medium text-gc-muted">
+        模型配置{llmReady && !editLlm ? " ✓" : ""}
+      </h2>
+      {llmReady && !editLlm ? (
+        <div className="gc-card flex flex-col gap-3 px-5 py-4">
+          <p className="text-sm">
+            ✓ 已配置——AI 功能就绪
+          </p>
+          <p className="text-xs leading-5 text-gc-muted">
+            当前模型：{modelName}
+            <br />
+            密钥已加密保存，不用重复填写
+          </p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={verifyOnly}
+              disabled={llmTesting}
+              className="flex-1 rounded-full bg-gc-accent-soft px-3 py-2 text-xs text-gc-text active:opacity-70 disabled:opacity-50"
+            >
+              {llmTesting ? "验证中…" : "重新验证"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditLlm(true)}
+              className="flex-1 rounded-full bg-gc-bg px-3 py-2 text-xs text-gc-muted active:opacity-70"
+            >
+              修改配置
+            </button>
+          </div>
+          {llmTestResult && <p className="text-center text-xs text-gc-muted">{llmTestResult}</p>}
+        </div>
+      ) : (
+        <>
       <p className="mb-3 px-1 text-xs text-gc-muted">
-        选一个服务商，粘贴密钥就完成——密钥只加密存在你自己的库里
+        {editLlm
+          ? "重新粘贴密钥保存即可，或点「保存」下方的返回"
+          : "AI 功能需要一个对话大模型。选服务商、粘贴密钥就完成——密钥加密存在你自己的数据库里"}
       </p>
       <form onSubmit={saveLLM} className="gc-card flex flex-col gap-3 px-5 py-5">
         {/* 预设服务商：一键填 URL + 模型名，用户只需贴 Key */}
@@ -287,12 +394,47 @@ export default function SettingsPage() {
         {llmTestResult && (
           <p className="text-center text-xs text-gc-muted">{llmTestResult}</p>
         )}
+        {editLlm && (
+          <button
+            type="button"
+            onClick={() => setEditLlm(false)}
+            className="self-center text-xs text-gc-muted underline"
+          >
+            返回（不改了）
+          </button>
+        )}
         </form>
+        </>
+      )}
       </section>
 
-      {/* 推送 */}
+      {/* 推送通道：已配置显示 ✓ 摘要 */}
       <section>
-        <h2 className="mb-1 px-1 text-sm font-medium text-gc-muted">推送通道</h2>
+        <h2 className="mb-1 px-1 text-sm font-medium text-gc-muted">
+          推送通道{pushEndpoint && !editPush ? " ✓" : ""}
+        </h2>
+        {pushEndpoint && !editPush ? (
+          <div className="gc-card flex flex-col gap-3 px-5 py-4">
+            <p className="text-sm">
+              ✓ 已配置{pushEnabled ? "——晨间摘要、晚间提醒、周报会推送到：" : "（当前已暂停推送）"}
+            </p>
+            <p className="truncate text-xs text-gc-muted">
+              {PUSH_CHANNELS.find((c) => c.value === pushChannel)?.label ?? pushChannel}
+              {" · "}
+              {pushEndpoint}
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setEditPush(true)}
+                className="flex-1 rounded-full bg-gc-bg px-3 py-2 text-xs text-gc-muted active:opacity-70"
+              >
+                修改推送配置
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
         <p className="mb-3 px-1 text-xs text-gc-muted">
           配置后，晨间摘要、晚间提醒、周报都会推送到你指定的通道
         </p>
@@ -356,7 +498,18 @@ export default function SettingsPage() {
           {pushTestResult && (
             <p className="text-center text-xs text-gc-muted">{pushTestResult}</p>
           )}
+          {editPush && (
+            <button
+              type="button"
+              onClick={() => setEditPush(false)}
+              className="self-center text-xs text-gc-muted underline"
+            >
+              返回（不改了）
+            </button>
+          )}
         </form>
+        </>
+      )}
       </section>
 
       {error && (

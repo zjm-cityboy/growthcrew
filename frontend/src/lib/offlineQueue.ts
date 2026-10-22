@@ -48,7 +48,7 @@ async function refreshTokens(): Promise<string | null> {
   if (!tokens) return null;
   try {
     const resp = await fetch(
-      `${process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api/v1"}/auth/refresh`,
+      `${process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8100/api/v1"}/auth/refresh`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -69,7 +69,7 @@ export async function syncOfflineQueue(): Promise<{ synced: number; failed: numb
   const queue = getOfflineQueue();
   if (queue.length === 0) return { synced: 0, failed: 0 };
 
-  const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api/v1";
+  const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8100/api/v1";
   let tokens = loadTokens();
   let synced = 0;
   const remaining: QueuedRequest[] = [];

@@ -174,6 +174,39 @@ export default function ArchivePage() {
   >([]);
   const [loaded, setLoaded] = useState(false); // P2-8：区分加载中与确认为空
   const [error, setError] = useState("");
+  const [confirmingId, setConfirmingId] = useState<number | null>(null); // 两步确认：第一次点亮起，再点执行
+  const [generating, setGenerating] = useState(false); // 周报手动生成中
+  const [reportError, setReportError] = useState("");
+
+  // 手动触发复盘师生成本周周报（不用等周日 20:00 的定时任务；同周重跑会覆盖）
+  async function generateReport() {
+    setGenerating(true);
+    setReportError("");
+    try {
+      await api.generateWeeklyReport();
+      await load();
+    } catch (exc) {
+      setReportError(exc instanceof Error ? exc.message : "生成失败");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  async function archiveGoal(goal: GoalOut) {
+    // 计划错了/不再追了的重置出口：归档后目标退出各列表、生效计划停排（历史保留）
+    if (confirmingId !== goal.id) {
+      setConfirmingId(goal.id);
+      window.setTimeout(() => setConfirmingId((cur) => (cur === goal.id ? null : cur)), 3000);
+      return;
+    }
+    setConfirmingId(null);
+    try {
+      const updated = await api.archiveGoal(goal.id);
+      setGoals((prev) => prev.map((g) => (g.id === updated.id ? updated : g)));
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : "归档失败");
+    }
+  }
 
   const load = useCallback(async () => {
     try {
@@ -228,21 +261,37 @@ export default function ArchivePage() {
       <section>
         <div className="mb-2.5 flex items-center justify-between px-1">
           <h2 className="text-sm font-medium text-gc-muted">本周周报</h2>
-          {reports.length > 0 && (
-            <Link href="/archive/reports" className="text-xs text-gc-accent underline">
-              查看全部 →
-            </Link>
-          )}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={generateReport}
+              disabled={generating}
+              className="text-xs text-gc-accent underline disabled:opacity-60"
+            >
+              {generating ? "复盘师分析中…" : "重新生成"}
+            </button>
+            {reports.length > 0 && (
+              <Link href="/archive/reports" className="text-xs text-gc-accent underline">
+                查看全部 →
+              </Link>
+            )}
+          </div>
         </div>
         {!loaded ? (
           <div className="gc-card px-5 py-6 text-center text-sm text-gc-muted">加载中…</div>
         ) : reports.length === 0 ? (
-          <div className="gc-card px-5 py-6 text-center text-sm text-gc-muted">
-            还没有周报——周日晚上复盘师会自动生成，或
-            <Link href="/settings" className="mx-1 underline">
-              配好模型
-            </Link>
-            后手动触发
+          <div className="gc-card px-5 py-6 text-center">
+            <p className="text-sm leading-6 text-gc-muted">
+              周报 = 复盘师 Agent 分析你这一周的完成率、跳过原因、高效时段，
+              给出你自己没意识到的洞察（周日 20:00 自动生成）
+            </p>
+            <button
+              onClick={generateReport}
+              disabled={generating}
+              className="mt-3 rounded-full bg-gc-accent px-5 py-2 text-xs text-white active:opacity-70 disabled:opacity-60"
+            >
+              {generating ? "复盘师分析中，约十几秒…" : "立即生成本周周报"}
+            </button>
+            {reportError && <p className="mt-2 text-xs text-red-500">{reportError}</p>}
           </div>
         ) : (
           reports.slice(0, 1).map((r) => (
@@ -281,9 +330,23 @@ export default function ArchivePage() {
                     {goal.weekly_hours ? ` · 每周 ${goal.weekly_hours}h` : ""}
                   </p>
                 </div>
-                <span className="ml-3 shrink-0 rounded-full bg-gc-accent-soft px-3 py-1 text-xs text-gc-accent">
-                  {goal.status}
-                </span>
+                <div className="ml-3 flex shrink-0 items-center gap-2">
+                  <span className="rounded-full bg-gc-accent-soft px-3 py-1 text-xs text-gc-accent">
+                    {goal.status}
+                  </span>
+                  {goal.status === "进行中" && (
+                    <button
+                      onClick={() => archiveGoal(goal)}
+                      className={`rounded-full px-3 py-1.5 text-xs active:opacity-70 ${
+                        confirmingId === goal.id
+                          ? "bg-red-100 text-red-600"
+                          : "bg-gc-bg text-gc-muted"
+                      }`}
+                    >
+                      {confirmingId === goal.id ? "确认归档？" : "归档"}
+                    </button>
+                  )}
+                </div>
               </div>
             ))
           )}
@@ -334,13 +397,13 @@ export default function ArchivePage() {
 
       {/* 数据导出（数据主权承诺） */}
       <a
-        href={`${process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api/v1"}/export/csv`}
+        href={`${process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8100/api/v1"}/export/csv`}
         className="px-1 text-xs text-gc-muted underline"
         onClick={(e) => {
           e.preventDefault();
           const tokens = loadTokens();
           if (!tokens) return;
-          const url = `${process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api/v1"}/export/csv`;
+          const url = `${process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8100/api/v1"}/export/csv`;
           fetch(url, { headers: { Authorization: `Bearer ${tokens.access_token}` } })
             .then((resp) => {
               if (!resp.ok) throw new Error(`导出失败（${resp.status}）`);

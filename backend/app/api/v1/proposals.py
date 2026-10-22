@@ -1,6 +1,7 @@
 """提案审批路由（HITL）。"""
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_session
@@ -10,6 +11,12 @@ from app.services.errors import NotFoundError, StateConflictError
 from app.services.plan_import import PlanImportService
 
 router = APIRouter(prefix="/proposals", tags=["proposals"])
+
+
+class RejectIn(BaseModel):
+    """拒绝原因：教练下一轮排程的自适应输入（拒绝不是死胡同）。"""
+
+    reason: str = Field(default="", max_length=200)
 
 
 @router.get("", response_model=list[ProposalOut])
@@ -49,11 +56,13 @@ async def approve_proposal(
 @router.post("/{proposal_id}/reject", response_model=ProposalOut)
 async def reject_proposal(
     proposal_id: int,
+    payload: RejectIn | None = None,
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> ProposalOut:
     try:
-        return await PlanImportService(session).reject(current_user.id, proposal_id)
+        reason = payload.reason if payload else None
+        return await PlanImportService(session).reject(current_user.id, proposal_id, reason)
     except NotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="提案不存在") from exc
     except StateConflictError as exc:

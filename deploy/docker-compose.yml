@@ -1,5 +1,9 @@
-# GrowthCrew 生产编排：db + backend + caddy（自动 HTTPS）
-# 使用前：cp .env.example .env 并填写真实值（.env 已被 gitignore）
+# GrowthCrew 本地部署编排（Docker Desktop / 单机）：db + backend + frontend
+# 一键启动：Windows 双击 setup.bat（内部调用 setup.ps1）；macOS/Linux 运行 ./setup.sh
+# 手动步骤与常见问题见项目根目录 DEPLOY.md
+# 服务器 + 域名 + HTTPS 模式见 docker-compose.server.yml 与 runbook.md
+name: growthcrew
+
 services:
   db:
     image: postgres:16-alpine
@@ -9,25 +13,29 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 3s
       retries: 10
-    networks:
-      - gc_net
 
   backend:
     build: ../backend
     restart: unless-stopped
+    # 启动即幂等迁移（alembic 已应用的版本自动跳过），无需手动执行
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000"
     environment:
       GC_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       GC_ENV: ${GC_ENV}
       GC_JWT_SECRET: ${GC_JWT_SECRET}
       GC_CORS_ORIGINS: ${GC_CORS_ORIGINS}
       GC_ENCRYPTION_KEY: ${GC_ENCRYPTION_KEY}
-      FORWARDED_ALLOW_IPS: 172.28.137.2
+      GC_ADMIN_USERNAMES: ${GC_ADMIN_USERNAMES:-[]}
+    ports:
+      - "8100:8000"
     depends_on:
       db:
         condition: service_healthy
@@ -43,39 +51,21 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
-    networks:
-      - gc_net
 
-  caddy:
-    image: caddy:2-alpine
+  frontend:
+    build: ../frontend
     restart: unless-stopped
     ports:
-      - "80:80"
-      - "443:443"
-    environment:
-      DOMAIN: ${DOMAIN}
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_certs:/data
-      - caddy_config:/config
-    depends_on:
-      backend:
-        condition: service_healthy
-    networks:
-      gc_net:
-        ipv4_address: 172.28.137.2
+      # 宿主端口刻意避开 3031-3130 一类 Windows/Hyper-V 动态保留段
+      # （Docker 绑定时会报 access permissions denied）；撞上见 DEPLOY.md FAQ
+      - "3211:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
 
 volumes:
-  postgres_data:
-    name: growthcrew_postgres_data
-  caddy_certs:
-    name: growthcrew_caddy_certs
-  caddy_config:
-    name: growthcrew_caddy_config
-
-networks:
-  gc_net:
-    driver: bridge
-    ipam:
-      config:
-        - subnet: 172.28.137.0/24
+  pgdata:
+    name: growthcrew_local_pgdata

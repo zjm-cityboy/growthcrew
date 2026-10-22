@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 
-/** 底部小抽屉：卡因/心情/睡眠共用。Esc 关闭、锁定背景滚动、关闭后还焦。 */
+/** 底部小抽屉：跳过原因/心情/睡眠共用。Esc 关闭、锁定背景滚动、关闭后还焦。 */
 export default function MiniSheet({
   open,
   title,

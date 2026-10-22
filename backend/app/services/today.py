@@ -26,6 +26,9 @@ class TodayService:
             user_id, day - timedelta(days=1)
         )
         tasks = await self._tasks.list_by_date(user_id, day)
+        # 今天无任务 → 预览即将开始的安排（批准的新计划常从下周一开始，
+        # 空态不预告会让用户误以为"什么都没发生"）
+        upcoming = [] if tasks else await self._tasks.list_upcoming(user_id, day)
         life_log = await self._life_logs.get(user_id, day)
         journal = await self._journals.get(user_id, day)
         streak = await self._streak(user_id, day)
@@ -33,6 +36,7 @@ class TodayService:
             date=day,
             yesterday=DaySummaryOut(done=yesterday_done, total=yesterday_total),
             tasks=[TaskOut.model_validate(task) for task in tasks],
+            upcoming=[TaskOut.model_validate(task) for task in upcoming],
             life_log=LifeLogOut.model_validate(life_log) if life_log else None,
             journal_submitted=journal is not None,
             streak=streak,

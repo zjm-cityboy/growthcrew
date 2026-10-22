@@ -34,3 +34,7 @@ frontend/node_modules/
 *.swp
 .DS_Store
 Thumbs.db
+
+# ---- 本机专用 / 工具目录，不入库 ----
+backend/.mimosa/
+growthcrew_start_bash.bat

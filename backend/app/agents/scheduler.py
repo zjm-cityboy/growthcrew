@@ -21,6 +21,7 @@ _ROUND_TO = 15
 class SubjectAllocation:
     label: str
     weekly_hours: float
+    items: tuple[str, ...] = ()  # 具体动作/学习单元池（如"深蹲 4×8"）；空=纯科目名标题
 
 
 @dataclass(frozen=True)
@@ -70,7 +71,7 @@ def schedule_week(
     scale = 1.0 if not overloaded or requested == 0 else capacity / requested
 
     ordered = sorted(subjects, key=lambda s: s.weekly_hours, reverse=True)
-    per_subject_daily: list[tuple[str, int]] = []
+    per_subject_daily: list[tuple[SubjectAllocation, int]] = []
     skipped = 0
     for subject in ordered:
         daily_minutes = subject.weekly_hours * 60 * scale / 7
@@ -79,15 +80,17 @@ def schedule_week(
             # 缩放后不足一个最小粒度的科目整周跳过，分钟数计入未排入
             skipped += int(subject.weekly_hours * 60 * scale)
             continue
-        per_subject_daily.append((subject.label, rounded))
+        per_subject_daily.append((subject, rounded))
 
     tasks: list[ScheduledTask] = []
     truncated = 0
+    # 动作轮换计数：每科目已排段数，从 items 池里按序取（周一深蹲、周三卧推…）
+    consumed: dict[str, int] = {}
     for offset in range(7):
         day = start + timedelta(days=offset)
         count = 0
         used = 0
-        for label, need in per_subject_daily:
+        for subject, need in per_subject_daily:
             remaining = need
             while (
                 remaining >= _ROUND_TO and count < _DAILY_TASK_CAP and used < _MAX_MINUTES_PER_DAY
@@ -96,12 +99,18 @@ def schedule_week(
                 chunk = int(chunk // _ROUND_TO) * _ROUND_TO
                 if chunk < _ROUND_TO:
                     break
+                if subject.items:
+                    item = subject.items[consumed.get(subject.label, 0) % len(subject.items)]
+                    consumed[subject.label] = consumed.get(subject.label, 0) + 1
+                    title = f"{subject.label}：{item} · 专注 {chunk} 分钟"
+                else:
+                    title = f"{subject.label} · 专注 {chunk} 分钟"
                 tasks.append(
                     ScheduledTask(
                         date=day,
-                        title=f"{label} · 专注 {chunk} 分钟",
+                        title=title,
                         duration_minutes=chunk,
-                        category_label=label,
+                        category_label=subject.label,
                     )
                 )
                 used += chunk

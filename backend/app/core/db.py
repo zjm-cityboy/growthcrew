@@ -8,6 +8,7 @@ import asyncio
 import sys
 from typing import Any
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -27,7 +28,17 @@ def create_db_engine(database_url: str) -> AsyncEngine:
         kwargs["connect_args"] = {"check_same_thread": False}
         if ":memory:" in database_url:
             kwargs["poolclass"] = StaticPool
-    return create_async_engine(database_url, **kwargs)
+    engine = create_async_engine(database_url, **kwargs)
+    if database_url.startswith("sqlite"):
+        # SQLite 默认不启用外键约束：不开这个 PRAGMA，所有 ondelete=CASCADE
+        # 形同虚设——删父行留下孤儿数据（PG 无此问题，服务端默认执行外键）
+        @event.listens_for(engine.sync_engine, "connect")
+        def _enable_sqlite_fk(dbapi_connection: Any, _record: Any) -> None:
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
+
+    return engine
 
 
 def create_session_maker(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:

@@ -53,3 +53,6 @@ login_limiter = SlidingWindowLimiter(max_requests=_MAX_REQUESTS)
 
 # 注册：argon2 哈希是 CPU 密集操作且无需认证，限额更紧
 register_limiter = SlidingWindowLimiter(max_requests=_REGISTER_MAX_REQUESTS)
+
+# 模型验证：每次触发真实的 LLM 调用（BYOK 自己的配额），防 token 泄露后被刷余额
+verify_limiter = SlidingWindowLimiter(max_requests=5)

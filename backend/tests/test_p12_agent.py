@@ -75,7 +75,14 @@ async def _import_with_fake(
 
 
 def _full_flow_script(next_monday_iso: str, today_iso: str) -> list[AssistantResult]:
-    """解析 → 读目标 → 排程(超载) → 下调重排 → 提交提案。"""
+    """解析 → 读目标 → 排程(超载) → 下调重排 → 提交提案。
+
+    案例任务固定排在 next_monday 的次日（下周二）：周一跑测试时
+    next_monday==今天，两件任务会同日落地，"今日页只有数学"的断言被击穿。
+    """
+    from datetime import date, timedelta
+
+    next_tuesday = (date.fromisoformat(next_monday_iso) + timedelta(days=1)).isoformat()
     return [
         _tool(
             "c1",
@@ -123,7 +130,7 @@ def _full_flow_script(next_monday_iso: str, today_iso: str) -> list[AssistantRes
                         "category_label": "数学",
                     },
                     {
-                        "date": next_monday_iso,
+                        "date": next_tuesday,
                         "title": "案例 · 专注 60 分钟",
                         "duration_minutes": 60,
                         "category_label": "案例",
@@ -257,13 +264,18 @@ async def test_reject_keeps_plan_draft(client: AsyncClient, engine: AsyncEngine)
 
 
 async def test_missing_info_returns_questions(client: AsyncClient, engine: AsyncEngine) -> None:
-    """缺截止日期与每周时长：返回追问而不是硬编计划。"""
+    """缺每周时长：返回追问而不是硬编计划。
+
+    截止日期不再追问——从一句话里推导（"3个月拿下"）并回填目标；
+    每周时长没有可靠的文本来源，仍走追问。
+    """
     user_id = await _create_user(engine, "question_user")
     goal_id = await _create_goal(client, user_id, deadline=None, weekly_hours=None)
     fake = FakeBackend([])  # 不应触达 LLM
     result = await _import_with_fake(client, engine, user_id, goal_id, fake)
     assert result["status"] == "questions"
-    assert len(result["questions"]) == 2
+    assert len(result["questions"]) == 1
+    assert "每周" in result["questions"][0]
     assert fake.calls == []
 
 

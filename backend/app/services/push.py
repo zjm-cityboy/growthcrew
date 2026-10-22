@@ -115,7 +115,13 @@ def validate_push_config(channel: str, endpoint: str) -> str | None:
 
 
 def _validate_no_private_address(url: str) -> str | None:
-    """解析 URL 主机名，拒绝指向私网/环回/元数据的地址。"""
+    """解析 URL 主机名，拒绝指向私网/环回/元数据的地址。
+
+    fail-closed：解析失败/异常一律拒绝——校验先查后用（TOCTOU）本身只能
+    挡静态配置，若失败还放行，攻击者控制 DNS 即可整体绕过（保存时解析
+    公网、调用时 rebinding 内网）。已知残余风险：两次解析之间的 rebinding
+    窗口，需出站 transport 层复查才能根除。
+    """
     import ipaddress
     import socket
     from urllib.parse import urlparse
@@ -137,11 +143,11 @@ def _validate_no_private_address(url: str) -> str | None:
         try:
             addr_infos = socket.getaddrinfo(hostname, None)
         except socket.gaierror:
-            return None  # 解析失败不阻止（可能是临时 DNS 问题），让请求自身报错
+            return f"域名 {hostname} 解析失败，请检查后再保存"
         for addr_info in addr_infos:
             ip = ipaddress.ip_address(addr_info[4][0])
             if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
                 return f"域名 {hostname} 解析到内网地址 {ip}，不允许"
         return None
     except Exception:
-        return None  # 解析异常不阻止保存（防止误拦合法配置）
+        return "URL 校验异常，已拒绝保存（fail-closed）"

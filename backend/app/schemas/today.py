@@ -17,6 +17,7 @@ class TodayOut(BaseModel):
     date: "_date"
     yesterday: DaySummaryOut
     tasks: list[TaskOut]
+    upcoming: list[TaskOut] = []  # 今天无任务时的"即将开始"预览（有任务时为空列表）
     life_log: LifeLogOut | None
     journal_submitted: bool
     streak: int

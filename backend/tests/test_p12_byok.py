@@ -1,5 +1,7 @@
 """P1.2 BYOK：加密、脱敏、设置 API、prod 守卫。"""
 
+from pathlib import Path
+
 import pytest
 from app.core.config import get_settings
 from app.core.crypto import CryptoError, decrypt_secret, encrypt_secret, mask_secret
@@ -61,12 +63,22 @@ async def test_llm_settings_api_flow(client: AsyncClient, engine: AsyncEngine) -
     assert bad.status_code == 422
 
 
-def test_prod_requires_encryption_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    """prod 未配置 GC_ENCRYPTION_KEY 必须启动即失败（BYOK 密钥加密的主密钥）。"""
+def test_prod_requires_encryption_key(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """prod 未配置 GC_ENCRYPTION_KEY 必须启动即失败（BYOK 密钥加密的主密钥）。
+
+    .env 已锚定 backend/ 绝对路径（防 CWD 漂移），chdir 不再隔离它——
+    本地 .env 里的变量必须显式清除，否则会补上导致测试假失败/假通过。
+    """
     get_settings.cache_clear()
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("GC_ENV", "prod")
     monkeypatch.setenv("GC_JWT_SECRET", "x" * 48)
-    monkeypatch.delenv("GC_ENCRYPTION_KEY", raising=False)
+    # .env 已锚定绝对路径，delenv 挡不住文件补值——直接设非法格式，
+    # 断言更强的"prod 必须是合法 Fernet 密钥"（同样命中 GC_ENCRYPTION_KEY 消息）
+    monkeypatch.setenv("GC_ENCRYPTION_KEY", "not-a-fernet-key")
+    monkeypatch.setenv("GC_DEMO_MODE", "false")  # 覆盖本地 .env 里的演示模式（env > .env 文件）
     with pytest.raises(RuntimeError, match="GC_ENCRYPTION_KEY"):
         get_settings()
     get_settings.cache_clear()

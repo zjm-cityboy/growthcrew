@@ -46,3 +46,15 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
     return user
+
+
+async def get_admin_user(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """管理后台守卫：用户名在 GC_ADMIN_USERNAMES 中才放行（部署者自控）。"""
+    if current_user.username not in get_settings().admin_usernames:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="无管理员权限",
+        )
+    return current_user

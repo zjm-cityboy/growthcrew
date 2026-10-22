@@ -2,12 +2,13 @@
 
 from datetime import date
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.domain.enums import GoalCategory
+from app.domain.enums import GoalCategory, GoalStatus, PlanStatus
 from app.models.goal import Goal, Milestone
+from app.models.plan import WeeklyPlan
 
 
 class GoalRepository:
@@ -52,6 +53,26 @@ class GoalRepository:
             .options(selectinload(Goal.milestones))
         )
         return result.scalar_one_or_none()
+
+    async def archive(self, goal_id: int, user_id: int) -> bool:
+        """归档目标并同步停排其生效中计划（条件更新，幂等，可重复调用）。
+
+        软删除而非物理删除：历史打卡与复盘是"不可篡改的事实"（写权限矩阵），
+        归档后目标退出下拉/首页，计划置为已替代，今日/本周任务随之消失。
+        """
+        result = await self._session.execute(
+            update(Goal)
+            .where(Goal.id == goal_id, Goal.user_id == user_id)
+            .values(status=GoalStatus.ARCHIVED)
+        )
+        if int(getattr(result, "rowcount", 0)) == 0:
+            return False
+        await self._session.execute(
+            update(WeeklyPlan)
+            .where(WeeklyPlan.goal_id == goal_id, WeeklyPlan.status == PlanStatus.ACTIVE)
+            .values(status=PlanStatus.SUPERSEDED)
+        )
+        return True
 
 
 class MilestoneRepository:

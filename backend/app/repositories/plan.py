@@ -4,7 +4,7 @@
 所有按用户取任务的查询都必须带这条 join，防止越权。
 """
 
-from datetime import date
+from datetime import date, timedelta
 
 from sqlalchemy import distinct, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,7 +12,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.time import today_cn
 from app.domain.constants import COUNTED_PLAN_STATUSES
-from app.domain.enums import PlanStatus, ProposalStatus, TaskStatus
+from app.domain.enums import PlanStatus, ProposalStatus, SkipReason, TaskStatus
 from app.models.goal import Goal
 from app.models.plan import PlanProposal, Task, WeeklyPlan
 
@@ -136,6 +136,23 @@ class TaskRepository:
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
+    async def list_upcoming(self, user_id: int, after_day: date, limit: int = 5) -> list[Task]:
+        """未来最近 N 条任务（今日空态的"即将开始"预览，口径同 list_by_date）。"""
+        stmt = (
+            select(Task)
+            .join(WeeklyPlan, Task.weekly_plan_id == WeeklyPlan.id)
+            .join(Goal, WeeklyPlan.goal_id == Goal.id)
+            .where(
+                Task.date > after_day,
+                Goal.user_id == user_id,
+                WeeklyPlan.status == PlanStatus.ACTIVE,
+            )
+            .order_by(Task.date, Task.id)
+            .limit(limit)
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
     async def day_summary(self, user_id: int, day: date) -> tuple[int, int]:
         """某日 (done, total)，口径：排除草稿/待审批计划。"""
         stmt = (
@@ -155,6 +172,24 @@ class TaskRepository:
             counts[status] = count
         total = sum(counts.values())
         return counts.get(TaskStatus.DONE, 0), total
+
+    async def count_skipped_this_week(self, user_id: int, reason: SkipReason) -> int:
+        """本周（周一至今）因指定原因跳过的任务数（即时干预的触发依据）。"""
+        monday = today_cn() - timedelta(days=today_cn().weekday())
+        stmt = (
+            select(func.count())
+            .select_from(Task)
+            .join(WeeklyPlan, Task.weekly_plan_id == WeeklyPlan.id)
+            .join(Goal, WeeklyPlan.goal_id == Goal.id)
+            .where(
+                Task.date >= monday,
+                Task.date <= today_cn(),
+                Goal.user_id == user_id,
+                Task.status == TaskStatus.SKIPPED,
+                Task.skip_reason == reason,
+            )
+        )
+        return int((await self._session.execute(stmt)).scalar() or 0)
 
     async def done_dates(self, user_id: int, since: date) -> list[date]:
         """自 since 起有已完成任务的日期（streak 计算用，升序）。"""
